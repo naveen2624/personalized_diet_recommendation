@@ -15,6 +15,7 @@ import {
   Target,
   Heart,
   TrendingUp,
+  Link,
 } from "lucide-react";
 
 export default function DietRecommendationLanding() {
@@ -103,7 +104,7 @@ export default function DietRecommendationLanding() {
                 Benefits
               </a>
               <button className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-2 rounded-full hover:from-purple-600 hover:to-pink-600 transition-all transform hover:scale-105">
-                Get Started
+                <Link href="/auth/login"> Get Started</Link>
               </button>
             </div>
           </div>

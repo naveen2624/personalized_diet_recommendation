@@ -1,16 +1,18 @@
 "use client";
 
 import { Home, Utensils, User } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useParams } from "next/navigation";
 
 export default function Layout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
+  const params = useParams();
+  const userId = params.id;
 
   const navItems = [
-    { id: "home", icon: Home, label: "Home", path: "/id/home" },
-    { id: "diet", icon: Utensils, label: "Diet", path: "/id/diet" },
-    { id: "profile", icon: User, label: "Profile", path: "/id/profile" },
+    { id: "home", icon: Home, label: "Home", path: `/${userId}/home` },
+    { id: "diet", icon: Utensils, label: "Diet", path: `/${userId}/diet` },
+    { id: "profile", icon: User, label: "Profile", path: `/${userId}/profile` },
   ];
 
   const isActive = (path) => pathname === path;
@@ -21,7 +23,7 @@ export default function Layout({ children }) {
       <div className="pb-32">{children}</div>
 
       {/* iOS Style Bottom Navigation - Centered */}
-      <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-6 pointer-events-none">
+      <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-6 pointer-events-none z-50">
         <nav className="bg-white/40 backdrop-blur-2xl rounded-full shadow-2xl border border-white/50 px-4 py-3 pointer-events-auto">
           <div className="flex items-center gap-2">
             {navItems.map((item) => {

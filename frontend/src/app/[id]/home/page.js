@@ -319,7 +319,8 @@ export default function DietLandingPage() {
               Hydration Time!
             </h3>
             <p className="text-gray-600 mb-4">
-              It's been 2 hours. Time to drink some water and stay hydrated! 💧
+              It`&apos;`s been 2 hours. Time to drink some water and stay
+              hydrated! 💧
             </p>
             <button
               onClick={() => {
@@ -531,7 +532,7 @@ export default function DietLandingPage() {
               <div className="flex items-center space-x-2">
                 <Droplet className="w-5 h-5 text-blue-600" />
                 <h3 className="text-lg font-bold text-gray-800">
-                  Today's Hydration
+                  Today`&apos;`s Hydration
                 </h3>
               </div>
               <span className="text-sm font-semibold text-blue-600">
@@ -564,7 +565,7 @@ export default function DietLandingPage() {
         {/* Daily Tips */}
         <div className="bg-gradient-to-br from-teal-50 to-emerald-50 rounded-3xl p-6 border-2 border-emerald-200">
           <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center space-x-2">
-            <span>Today's Tip</span>
+            <span>Today`&apos;`s Tip</span>
             <span className="text-2xl">💡</span>
           </h3>
           <p className="text-gray-700 leading-relaxed">{nutritionTip}</p>

@@ -1,4 +1,3 @@
-# backend/api.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import google.generativeai as genai
@@ -6,6 +5,8 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 import logging
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+import time
 
 # Suppress gRPC warnings
 os.environ['GRPC_ENABLE_FORK_SUPPORT'] = '1'
@@ -16,6 +17,82 @@ logging.getLogger('google.generativeai').setLevel(logging.ERROR)
 load_dotenv()
 
 app = Flask(__name__)
+
+# ============= PROMETHEUS METRICS =============
+
+# Request metrics
+REQUEST_COUNT = Counter(
+    'flask_app_requests_total', 
+    'Total HTTP requests', 
+    ['method', 'endpoint', 'http_status']
+)
+
+REQUEST_LATENCY = Histogram(
+    'flask_app_request_latency_seconds', 
+    'HTTP request latency', 
+    ['method', 'endpoint'],
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
+)
+
+# Diet plan specific metrics
+DIET_PLAN_REQUESTS = Counter(
+    'diet_plan_requests_total',
+    'Total diet plan generation requests',
+    ['goal', 'diet_preference', 'status']
+)
+
+DIET_PLAN_GENERATION_TIME = Histogram(
+    'diet_plan_generation_seconds',
+    'Time taken to generate diet plan',
+    ['goal', 'diet_preference'],
+    buckets=(1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0)
+)
+
+DIET_PLAN_FAILURES = Counter(
+    'diet_plan_failures_total',
+    'Total diet plan generation failures',
+    ['error_type', 'goal']
+)
+
+# API health metrics
+API_INITIALIZATION_STATUS = Gauge(
+    'api_initialization_status',
+    'API initialization status (1=success, 0=failure)'
+)
+
+ACTIVE_REQUESTS = Gauge(
+    'active_requests',
+    'Number of requests currently being processed',
+    ['endpoint']
+)
+
+# Model metrics
+MODEL_API_CALLS = Counter(
+    'gemini_api_calls_total',
+    'Total Gemini API calls',
+    ['model_name', 'status']
+)
+
+JSON_PARSE_ERRORS = Counter(
+    'json_parse_errors_total',
+    'Total JSON parsing errors from AI responses'
+)
+
+# User profile metrics
+USER_PROFILE_DISTRIBUTION = Counter(
+    'user_profile_requests',
+    'Distribution of user profiles',
+    ['goal', 'diet_preference', 'activity_level', 'gender']
+)
+
+CALORIE_TARGET_DISTRIBUTION = Histogram(
+    'calorie_target_distribution',
+    'Distribution of calorie targets generated',
+    buckets=(1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000)
+)
+
+# ============= END METRICS =============
+
 CORS(app)
 
 class DietPlanGenerator:
@@ -23,6 +100,7 @@ class DietPlanGenerator:
         if api_key is None:
             api_key = os.getenv('GEMINI_API_KEY')
             if not api_key:
+                API_INITIALIZATION_STATUS.set(0)
                 raise ValueError("GEMINI_API_KEY not found in .env file")
         
         genai.configure(api_key=api_key)
@@ -49,13 +127,24 @@ class DietPlanGenerator:
                 model_to_use = 'gemini-2.5-flash-lite'
             
             self.model = genai.GenerativeModel(model_to_use)
+            self.model_name = model_to_use
+            API_INITIALIZATION_STATUS.set(1)
             print(f"✓ Using model: {model_to_use}")
         except Exception as e:
             self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
+            self.model_name = 'gemini-2.5-flash-lite'
+            API_INITIALIZATION_STATUS.set(1)
             print(f"✓ Using fallback model: gemini-2.5-flash-lite")
     
     def generate_diet_plan(self, user_data: dict) -> dict:
         import json
+        
+        goal = user_data.get('goal', 'Weight Maintenance')
+        diet_pref = user_data.get('diet_preference', 'No Preference')
+        
+        # Start timing
+        start_time = time.time()
+        
         prompt = f"""
 You are a certified nutritionist and fitness expert. Create a detailed, personalized 7-day diet plan based on the following user information and respond ONLY with valid JSON format.
 
@@ -217,9 +306,12 @@ Important: Return ONLY the JSON object, with no additional text, markdown format
 """
         
         try:
-            print(f"→ Generating diet plan for {user_data.get('goal', 'N/A')} goal...")
+            print(f"→ Generating diet plan for {goal} goal...")
             response = self.model.generate_content(prompt)
             response_text = response.text.strip()
+            
+            # Track successful API call
+            MODEL_API_CALLS.labels(model_name=self.model_name, status='success').inc()
             
             # Remove markdown code blocks if present
             if response_text.startswith('```json'):
@@ -233,12 +325,33 @@ Important: Return ONLY the JSON object, with no additional text, markdown format
             
             # Parse JSON response
             diet_plan = json.loads(response_text)
-            print(f"✓ Diet plan generated successfully!")
+            
+            # Track generation time
+            generation_time = time.time() - start_time
+            DIET_PLAN_GENERATION_TIME.labels(goal=goal, diet_preference=diet_pref).observe(generation_time)
+            
+            # Track successful generation
+            DIET_PLAN_REQUESTS.labels(goal=goal, diet_preference=diet_pref, status='success').inc()
+            
+            # Track calorie target distribution
+            if 'daily_calorie_target' in diet_plan:
+                CALORIE_TARGET_DISTRIBUTION.observe(diet_plan['daily_calorie_target'])
+            
+            print(f"✓ Diet plan generated successfully in {generation_time:.2f}s!")
             return diet_plan
+            
         except json.JSONDecodeError as e:
+            JSON_PARSE_ERRORS.inc()
+            DIET_PLAN_FAILURES.labels(error_type='json_parse_error', goal=goal).inc()
+            DIET_PLAN_REQUESTS.labels(goal=goal, diet_preference=diet_pref, status='failure').inc()
+            MODEL_API_CALLS.labels(model_name=self.model_name, status='json_error').inc()
             print(f"✗ JSON parsing error: {str(e)}")
             raise Exception(f"Error parsing AI response as JSON: {str(e)}")
+            
         except Exception as e:
+            DIET_PLAN_FAILURES.labels(error_type='generation_error', goal=goal).inc()
+            DIET_PLAN_REQUESTS.labels(goal=goal, diet_preference=diet_pref, status='failure').inc()
+            MODEL_API_CALLS.labels(model_name=self.model_name, status='error').inc()
             print(f"✗ Generation error: {str(e)}")
             raise Exception(f"Error generating diet plan: {str(e)}")
 
@@ -249,6 +362,30 @@ except Exception as e:
     print(f"✗ Error initializing API: {e}")
     generator = None
 
+@app.before_request
+def start_timer():
+    request.start_time = time.time()
+    # Track active requests
+    ACTIVE_REQUESTS.labels(endpoint=request.path).inc()
+
+@app.after_request
+def record_metrics(response):
+    # Calculate response time
+    resp_time = time.time() - request.start_time
+    
+    # Record metrics
+    REQUEST_LATENCY.labels(request.method, request.path).observe(resp_time)
+    REQUEST_COUNT.labels(request.method, request.path, response.status_code).inc()
+    
+    # Decrement active requests
+    ACTIVE_REQUESTS.labels(endpoint=request.path).dec()
+    
+    return response
+
+@app.route('/metrics')
+def metrics():
+    """Prometheus metrics endpoint"""
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -257,16 +394,14 @@ def health_check():
         'status': 'success',
         'message': 'Diet Plan API is running',
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0'
+        'version': '1.0.0',
+        'api_initialized': generator is not None
     }), 200
 
 
 @app.route('/api/diet-plan', methods=['POST'])
 def create_diet_plan():
-    """
-    Generate personalized diet plan
-    Expects JSON payload with user data
-    """
+    """Generate personalized diet plan"""
     try:
         if not generator:
             return jsonify({
@@ -286,6 +421,14 @@ def create_diet_plan():
                 'message': f'Missing required fields: {", ".join(missing_fields)}',
                 'required_fields': required_fields
             }), 400
+        
+        # Track user profile distribution
+        USER_PROFILE_DISTRIBUTION.labels(
+            goal=data.get('goal', 'Unknown'),
+            diet_preference=data.get('diet_preference', 'Unknown'),
+            activity_level=data.get('activity_level', 'Unknown'),
+            gender=data.get('gender', 'Unknown')
+        ).inc()
         
         print(f"\n{'='*60}")
         print(f"📋 New Diet Plan Request")
@@ -328,9 +471,7 @@ def create_diet_plan():
 
 @app.route('/api/diet-plan/quick', methods=['POST'])
 def quick_diet_plan():
-    """
-    Quick diet plan with minimal inputs
-    """
+    """Quick diet plan with minimal inputs"""
     try:
         if not generator:
             return jsonify({
@@ -353,6 +494,14 @@ def quick_diet_plan():
             'dislikes': data.get('dislikes', 'None'),
             'meals_per_day': data.get('meals_per_day', 3)
         }
+        
+        # Track user profile
+        USER_PROFILE_DISTRIBUTION.labels(
+            goal=user_data['goal'],
+            diet_preference=user_data['diet_preference'],
+            activity_level=user_data['activity_level'],
+            gender=user_data['gender']
+        ).inc()
         
         diet_plan = generator.generate_diet_plan(user_data)
         
@@ -392,6 +541,7 @@ def not_found(error):
         'available_endpoints': [
             'GET /api/health',
             'GET /api/options',
+            'GET /metrics',
             'POST /api/diet-plan',
             'POST /api/diet-plan/quick'
         ]
@@ -412,6 +562,7 @@ if __name__ == '__main__':
     ╔══════════════════════════════════════════════════════════════╗
     ║     Diet Plan Generator API - Running on Port 6060           ║
     ║                  Using Google Gemini API                     ║
+    ║              Prometheus Metrics: /metrics                    ║
     ╚══════════════════════════════════════════════════════════════╝
     
     📝 Available Endpoints:
@@ -419,6 +570,7 @@ if __name__ == '__main__':
     - GET  /api/options             → Available options
     - POST /api/diet-plan           → Generate full diet plan
     - POST /api/diet-plan/quick     → Quick diet plan
+    - GET  /metrics                 → Prometheus metrics
     
     🔗 Base URL: http://localhost:6060
     

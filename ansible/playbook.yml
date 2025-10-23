@@ -1,5 +1,5 @@
 ---
-- name: Manage ECS Fargate services
+- name: Manage ECS Fargate services via AWS CLI
   hosts: localhost
   connection: local
   gather_facts: false
@@ -10,40 +10,46 @@
     region: ap-south-1
 
   tasks:
-    - name: Ensure frontend ECS service is running desired count
-      amazon.aws.ecs_service:
-        cluster: "{{ cluster_name }}"
-        service: "{{ frontend_service }}"
-        desired_count: 1
-        state: present
-        region: "{{ region }}"
+    - name: Ensure frontend ECS service desired count = 1
+      ansible.builtin.command: >
+        aws ecs update-service
+        --cluster {{ cluster_name }}
+        --service {{ frontend_service }}
+        --desired-count 1
+        --region {{ region }}
+      register: frontend_update
+      changed_when: "'service' in frontend_update.stdout"
 
-    - name: Ensure backend ECS service is running desired count
-      amazon.aws.ecs_service:
-        cluster: "{{ cluster_name }}"
-        service: "{{ backend_service }}"
-        desired_count: 1
-        state: present
-        region: "{{ region }}"
+    - name: Ensure backend ECS service desired count = 1
+      ansible.builtin.command: >
+        aws ecs update-service
+        --cluster {{ cluster_name }}
+        --service {{ backend_service }}
+        --desired-count 1
+        --region {{ region }}
+      register: backend_update
+      changed_when: "'service' in backend_update.stdout"
 
     - name: List running tasks for frontend
-      amazon.aws.ecs_task_info:
-        cluster: "{{ cluster_name }}"
-        service_name: "{{ frontend_service }}"
-        region: "{{ region }}"
+      ansible.builtin.command: >
+        aws ecs list-tasks
+        --cluster {{ cluster_name }}
+        --service-name {{ frontend_service }}
+        --region {{ region }}
       register: frontend_tasks
 
     - name: List running tasks for backend
-      amazon.aws.ecs_task_info:
-        cluster: "{{ cluster_name }}"
-        service_name: "{{ backend_service }}"
-        region: "{{ region }}"
+      ansible.builtin.command: >
+        aws ecs list-tasks
+        --cluster {{ cluster_name }}
+        --service-name {{ backend_service }}
+        --region {{ region }}
       register: backend_tasks
 
     - name: Display frontend task ARNs
       debug:
-        var: frontend_tasks.tasks
+        var: frontend_tasks.stdout_lines
 
     - name: Display backend task ARNs
       debug:
-        var: backend_tasks.tasks
+        var: backend_tasks.stdout_lines

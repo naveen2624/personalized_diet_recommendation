@@ -4,3 +4,4 @@ scikit-learn
 gunicorn
 uvicorn
 fastapi
+prometheus-client

@@ -536,8 +536,8 @@ export default function DietLandingPage() {
                 </h3>
               </div>
               <span className="text-sm font-semibold text-blue-600">
-                {hydrationData.consumed_liters.toFixed(1)}L /{" "}
-                {hydrationData.target_liters.toFixed(1)}L
+                {(hydrationData.consumed_liters || 0).toFixed(1)}L /{" "}
+                {(hydrationData.target_liters || 2.5).toFixed(1)}L
               </span>
             </div>
             <div className="w-full bg-blue-200 rounded-full h-4 mb-3">
@@ -545,8 +545,8 @@ export default function DietLandingPage() {
                 className="bg-gradient-to-r from-blue-500 to-cyan-500 h-4 rounded-full transition-all duration-500"
                 style={{
                   width: `${Math.min(
-                    (hydrationData.consumed_liters /
-                      hydrationData.target_liters) *
+                    ((hydrationData.consumed_liters || 0) /
+                      (hydrationData.target_liters || 2.5)) *
                       100,
                     100
                   )}%`,

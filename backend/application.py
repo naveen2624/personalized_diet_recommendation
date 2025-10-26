@@ -1,3 +1,4 @@
+# backend/application.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import google.generativeai as genai
@@ -16,7 +17,7 @@ logging.getLogger('google.generativeai').setLevel(logging.ERROR)
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+application = Flask(__name__)
 
 # ============= PROMETHEUS METRICS =============
 
@@ -93,7 +94,7 @@ CALORIE_TARGET_DISTRIBUTION = Histogram(
 
 # ============= END METRICS =============
 
-CORS(app)
+CORS(application)
 
 class DietPlanGenerator:
     def __init__(self, api_key: str = None):
@@ -362,13 +363,13 @@ except Exception as e:
     print(f"✗ Error initializing API: {e}")
     generator = None
 
-@app.before_request
+@application.before_request
 def start_timer():
     request.start_time = time.time()
     # Track active requests
     ACTIVE_REQUESTS.labels(endpoint=request.path).inc()
 
-@app.after_request
+@application.after_request
 def record_metrics(response):
     # Calculate response time
     resp_time = time.time() - request.start_time
@@ -382,12 +383,18 @@ def record_metrics(response):
     
     return response
 
-@app.route('/metrics')
+@application.route('/metrics')
 def metrics():
     """Prometheus metrics endpoint"""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
-
-@app.route('/api/health', methods=['GET'])
+@application.route('/')
+def index():
+    return jsonify({
+        'status': 'success',
+        'message': 'Diet Plan API is running',
+        'endpoints': ['/api/health', '/api/diet-plan', '/metrics']
+    }), 200
+@application.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
@@ -399,7 +406,7 @@ def health_check():
     }), 200
 
 
-@app.route('/api/diet-plan', methods=['POST'])
+@application.route('/api/diet-plan', methods=['POST'])
 def create_diet_plan():
     """Generate personalized diet plan"""
     try:
@@ -469,7 +476,7 @@ def create_diet_plan():
         }), 500
 
 
-@app.route('/api/diet-plan/quick', methods=['POST'])
+@application.route('/api/diet-plan/quick', methods=['POST'])
 def quick_diet_plan():
     """Quick diet plan with minimal inputs"""
     try:
@@ -520,7 +527,7 @@ def quick_diet_plan():
         }), 500
 
 
-@app.route('/api/options', methods=['GET'])
+@application.route('/api/options', methods=['GET'])
 def get_options():
     """Get available options for diet plan generation"""
     return jsonify({
@@ -532,7 +539,7 @@ def get_options():
     }), 200
 
 
-@app.errorhandler(404)
+@application.errorhandler(404)
 def not_found(error):
     """Handle 404 errors"""
     return jsonify({
@@ -548,7 +555,7 @@ def not_found(error):
     }), 404
 
 
-@app.errorhandler(500)
+@application.errorhandler(500)
 def server_error(error):
     """Handle 500 errors"""
     return jsonify({
@@ -558,6 +565,7 @@ def server_error(error):
 
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
     print("""
     ╔══════════════════════════════════════════════════════════════╗
     ║     Diet Plan Generator API - Running on Port 6060           ║
@@ -575,4 +583,4 @@ if __name__ == '__main__':
     🔗 Base URL: http://localhost:6060
     
     """)
-    app.run(debug=True, host='0.0.0.0', port=6060)
+    application.run(debug=False, host='0.0.0.0', port=port)

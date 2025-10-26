@@ -1,4 +1,3 @@
-# backend/application.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import google.generativeai as genai
@@ -14,7 +13,8 @@ os.environ['GRPC_ENABLE_FORK_SUPPORT'] = '1'
 os.environ['GRPC_POLL_STRATEGY'] = 'poll'
 logging.getLogger('google.generativeai').setLevel(logging.ERROR)
 
-# Load environment variables
+# Load environment variables from .env file (for local development)
+# On Elastic Beanstalk, environment variables are set through EB configuration
 load_dotenv()
 
 application = Flask(__name__)
@@ -99,10 +99,12 @@ CORS(application)
 class DietPlanGenerator:
     def __init__(self, api_key: str = None):
         if api_key is None:
-            api_key = os.getenv('GEMINI_API_KEY')
+            # Try to get from environment variables (EB sets these automatically)
+            api_key = os.environ.get('GEMINI_API_KEY') or os.getenv('GEMINI_API_KEY')
+          
             if not api_key:
                 API_INITIALIZATION_STATUS.set(0)
-                raise ValueError("GEMINI_API_KEY not found in .env file")
+                raise ValueError("GEMINI_API_KEY not found in environment variables")
         
         genai.configure(api_key=api_key)
         
@@ -387,6 +389,7 @@ def record_metrics(response):
 def metrics():
     """Prometheus metrics endpoint"""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
 @application.route('/')
 def index():
     return jsonify({
@@ -394,6 +397,12 @@ def index():
         'message': 'Diet Plan API is running',
         'endpoints': ['/api/health', '/api/diet-plan', '/metrics']
     }), 200
+
+@application.route("/test_env")
+def test_env():
+    return os.environ.get("GEMINI_API_KEY", "NOT FOUND")
+
+
 @application.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -413,7 +422,7 @@ def create_diet_plan():
         if not generator:
             return jsonify({
                 'status': 'error',
-                'message': 'API not properly initialized. Check GEMINI_API_KEY in .env file'
+                'message': 'API not properly initialized. Check GEMINI_API_KEY environment variable'
             }), 500
         
         data = request.get_json()
@@ -565,10 +574,12 @@ def server_error(error):
 
 
 if __name__ == '__main__':
+    # Get port from environment variable (EB uses PORT environment variable)
     port = int(os.environ.get('PORT', 8000))
-    print("""
+    
+    print(f"""
     ╔══════════════════════════════════════════════════════════════╗
-    ║     Diet Plan Generator API - Running on Port 6060           ║
+    ║     Diet Plan Generator API - Running on Port {port}           ║
     ║                  Using Google Gemini API                     ║
     ║              Prometheus Metrics: /metrics                    ║
     ╚══════════════════════════════════════════════════════════════╝
@@ -580,7 +591,8 @@ if __name__ == '__main__':
     - POST /api/diet-plan/quick     → Quick diet plan
     - GET  /metrics                 → Prometheus metrics
     
-    🔗 Base URL: http://localhost:6060
+    🔗 Base URL: http://localhost:{port}
+    🌐 Environment: {'Elastic Beanstalk' if 'AWS_EXECUTION_ENV' in os.environ else 'Local Development'}
     
     """)
     application.run(debug=False, host='0.0.0.0', port=port)

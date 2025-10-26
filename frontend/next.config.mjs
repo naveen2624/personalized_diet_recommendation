@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: "standalone", // needed for SSR hosting in Amplify
-};
+const nextConfig = {};
 
-module.exports = nextConfig;
+export default nextConfig;

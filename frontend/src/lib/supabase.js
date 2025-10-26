@@ -7,13 +7,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Backend API URL - use environment variable or default to AWS
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://flask-backend-env.eba-my3hp2ct.ap-south-1.elasticbeanstalk.com";
+
 // ============================================
 // AUTHENTICATION FUNCTIONS
 // ============================================
 
-/**
- * Sign up with email and password
- */
 /**
  * Sign up with email and password
  */
@@ -198,15 +200,6 @@ export const getUserProfile = async (userId) => {
 };
 
 /**
- * Update user profile
- */
-/**
- * Update user profile (with upsert to handle missing profiles)
- */
-/**
- * Update user profile (with upsert to handle missing profiles)
- */
-/**
  * Update user profile (with proper upsert handling)
  */
 export const updateUserProfile = async (userId, updates) => {
@@ -333,15 +326,10 @@ export const deleteDietaryRestriction = async (restrictionId) => {
 /**
  * Generate and save diet plan from API
  */
-// Add this to your supabase.js file - REPLACE the existing generateAndSaveDietPlan function
-
-/**
- * Generate and save diet plan from API
- */
 export const generateAndSaveDietPlan = async (userId, userProfile) => {
   try {
-    // Fetch diet plan from your Flask API
-    const response = await fetch("http://localhost:6060/api/diet-plan", {
+    // Fetch diet plan from your Flask API on AWS
+    const response = await fetch(`${API_BASE_URL}/api/diet-plan`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -361,7 +349,8 @@ export const generateAndSaveDietPlan = async (userId, userProfile) => {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to generate diet plan from API");
+      const errorText = await response.text();
+      throw new Error(`Failed to generate diet plan from API: ${errorText}`);
     }
 
     const apiData = await response.json();

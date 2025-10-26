@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  output: "standalone",
+  reactStrictMode: true,
+  swcMinify: true,
+  trailingSlash: false,
+};
 
 export default nextConfig;
